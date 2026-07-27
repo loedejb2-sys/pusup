@@ -6,9 +6,16 @@ const statusElement = document.getElementById('status');
 
 let pushupCount = 0;
 let pushupState = "up"; 
-let systemActive = false; // Strictly locked until valid trigger
+let systemActive = false; 
 
-// Core body connections for skeleton drawing
+// Ensure canvas matches screen dimensions on load and resize
+function resizeCanvas() {
+    canvasElement.width = window.innerWidth;
+    canvasElement.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
 const POSE_CONNECTIONS = [
     [11, 12], // Shoulders
     [11, 13], [13, 15], // Left arm
@@ -26,8 +33,6 @@ function calculateAngle(a, b, c) {
     return angle;
 }
 
-// Strict Thumbs-Up Logic: Right wrist (16) must be raised clearly, 
-// and the elbow (14) must be bent upwards or hand held up near head/chest level.
 function detectThumbsUp(landmarks) {
     const shoulder = landmarks[12];
     const elbow = landmarks[14];
@@ -35,12 +40,8 @@ function detectThumbsUp(landmarks) {
     const thumbTip = landmarks[20];
 
     if (shoulder && elbow && wrist && thumbTip) {
-        // Check if hand/wrist is raised above or near shoulder level (lower Y value means higher on screen)
         const isHandRaised = wrist.y < shoulder.y;
-        
-        // Check if thumb tip is positioned higher than the wrist itself
         const isThumbPointingUp = thumbTip.y < wrist.y;
-
         if (isHandRaised && isThumbPointingUp) {
             return true;
         }
@@ -52,15 +53,15 @@ function onResults(results) {
     canvasCtx.save();
     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
     
-    // Always keep the live camera feed running on canvas
+    // Draw mirrored webcam frame to fit full screen dimensions
     canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
     if (results.poseLandmarks) {
         const landmarks = results.poseLandmarks;
 
-        // 1. Draw Skeleton Lines (Orange = Waiting for trigger, Cyan = Active)
+        // 1. Draw Sleek Neon Skeleton Lines
         canvasCtx.strokeStyle = systemActive ? '#00f2fe' : '#f39c12';
-        canvasCtx.lineWidth = 4;
+        canvasCtx.lineWidth = 5;
         canvasCtx.lineCap = 'round';
 
         for (let i = 0; i < POSE_CONNECTIONS.length; i++) {
@@ -82,32 +83,27 @@ function onResults(results) {
             if (lm && lm.visibility > 0.5) {
                 canvasCtx.fillStyle = systemActive ? '#ff007f' : '#e67e22';
                 canvasCtx.beginPath();
-                canvasCtx.arc(lm.x * canvasElement.width, lm.y * canvasElement.height, 5, 0, 2 * Math.PI);
+                canvasCtx.arc(lm.x * canvasElement.width, lm.y * canvasElement.height, 6, 0, 2 * Math.PI);
                 canvasCtx.fill();
             }
         }
 
-        // 3. System Lock / Unlock Gate
+        // 3. System Lock / Unlock Gate & Tracking Logic
         if (!systemActive) {
-            const isThumbsUp = detectThumbsUp(landmarks);
-
-            if (isThumbsUp) {
+            if (detectThumbsUp(landmarks)) {
                 systemActive = true;
-                statusElement.innerText = "Status: Thumbs Up confirmed! Session started.";
+                statusElement.innerText = "Thumbs Up Confirmed • Session Active";
             } else {
-                statusElement.innerText = "Status: CAMERA RUNNING. Give a clear Thumbs Up to start counting.";
+                statusElement.innerText = "Give a Thumbs Up to unlock push-up counter";
             }
         } else {
-            // Active Rep Counting Logic
             const shoulder = landmarks[12];
             const elbow = landmarks[14];
             const wrist = landmarks[16];
 
             if (shoulder && elbow && wrist) {
                 let elbowAngle = calculateAngle(shoulder, elbow, wrist);
-                statusElement.innerText = `Active | Elbow Angle: ${Math.round(elbowAngle)}°`;
 
-                // Push-up state transition machine
                 if (elbowAngle < 90 && pushupState === "up") {
                     pushupState = "down";
                 }
@@ -119,7 +115,7 @@ function onResults(results) {
             }
         }
     } else {
-        statusElement.innerText = "Status: Camera running. Step into view.";
+        statusElement.innerText = "Step back into full camera view";
     }
     canvasCtx.restore();
 }
@@ -142,13 +138,13 @@ const camera = new Camera(videoElement, {
     onFrame: async () => {
         await pose.send({ image: videoElement });
     },
-    width: 640,
-    height: 480
+    width: 1280,
+    height: 720
 });
 
 camera.start()
     .then(() => {
-        statusElement.innerText = "Status: Camera live. Raise a Thumbs Up to unlock counter.";
+        statusElement.innerText = "Camera live • Give a Thumbs Up to start";
     })
     .catch(err => {
         statusElement.innerText = "Error: Camera access failed.";
