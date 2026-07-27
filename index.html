@@ -10,17 +10,26 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
 </head>
 <body>
-    <div class="container">
-        <h1>AI Push-Up Counter</h1>
-        <div class="counter-box">
-            <h2>Push-ups: <span id="counter">0</span></h2>
-            <p id="status">Status: Preparing...</p>
+    <div class="video-container">
+        <video class="input_video" autoplay muted></video>
+        <canvas class="output_canvas"></canvas>
+    </div>
+
+    <div class="overlay-ui">
+        <div class="header-overlay">
+            <h1>PUSH-UP TRACKER</h1>
         </div>
-        <div class="video-container">
-            <video class="input_video" autoplay muted></video>
-            <canvas class="output_canvas" width="640" height="480"></canvas>
+        
+        <div class="counter-overlay">
+            <span id="counter">0</span>
+            <span class="label">REPS</span>
+        </div>
+
+        <div class="status-overlay">
+            <p id="status">Status: Camera starting...</p>
         </div>
     </div>
+
     <script src="app.js"></script>
 </body>
 </html>
