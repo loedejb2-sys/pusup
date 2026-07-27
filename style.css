@@ -1,61 +1,25 @@
-body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background-color: #0d1117;
-    color: #c9d1d9;
-    text-align: center;
+* {
+    box-sizing: border-box;
+}
+
+body, html {
     margin: 0;
-    padding: 20px;
-}
-
-.container {
-    max-width: 720px;
-    margin: 0 auto;
-    background: #161b22;
-    padding: 25px;
-    border-radius: 16px;
-    border: 1px solid #30363d;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-}
-
-h1 {
-    margin-top: 0;
-    color: #f0f6fc;
-    font-size: 1.8rem;
-}
-
-.counter-box {
-    display: flex;
-    justify-content: space-around;
-    align-items: center;
-    background: #21262d;
-    padding: 15px;
-    border-radius: 10px;
-    margin-bottom: 20px;
-    border: 1px solid #30363d;
-}
-
-.counter-box h2 {
-    margin: 0;
-    font-size: 1.2rem;
-}
-
-#counter {
-    color: #3fb950;
-    font-size: 2.2rem;
-}
-
-#status {
-    margin: 0;
-    color: #8b949e;
-    font-size: 0.95rem;
-}
-
-.video-container {
-    position: relative;
-    display: inline-block;
-    border-radius: 12px;
+    padding: 0;
+    width: 100%;
+    height: 100%;
     overflow: hidden;
-    border: 2px solid #30363d;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-color: #000;
+}
+
+/* Fullscreen Background Video/Canvas */
+.video-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1;
 }
 
 .input_video {
@@ -63,9 +27,74 @@ h1 {
 }
 
 canvas.output_canvas {
-    display: block;
-    transform: scaleX(-1); /* Flips camera horizontally like a mirror */
     width: 100%;
-    max-width: 640px;
-    height: auto;
+    height: 100%;
+    object-fit: cover; /* Fills entire screen smoothly without distortion */
+    transform: scaleX(-1); /* Mirror camera view */
+}
+
+/* Floating Sleek Overlays with No Solid Backgrounds */
+.overlay-ui {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10;
+    pointer-events: none; /* Allows clicks to pass through if needed */
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    padding: 30px;
+}
+
+.header-overlay h1 {
+    margin: 0;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 1.2rem;
+    letter-spacing: 3px;
+    font-weight: 700;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+}
+
+/* Center / Rep Counter Display */
+.counter-overlay {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-shadow: 0 4px 20px rgba(0, 0, 0, 0.9);
+}
+
+#counter {
+    font-size: 8rem;
+    font-weight: 800;
+    color: #3fb950;
+    line-height: 1;
+    margin-bottom: -5px;
+}
+
+.counter-overlay .label {
+    font-size: 1rem;
+    letter-spacing: 4px;
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 600;
+}
+
+/* Bottom Status Notification */
+.status-overlay {
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    padding: 10px 24px;
+    border-radius: 30px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#status {
+    margin: 0;
+    color: #f0f6fc;
+    font-size: 0.95rem;
+    letter-spacing: 0.5px;
+    text-align: center;
 }
