@@ -8,9 +8,16 @@ let pushupCount = 0;
 let pushupState = "up"; 
 let systemActive = false; 
 
-// Storage for latest frame data
+// Thumbs-up confirmation buffer to require holding the gesture
+let thumbsUpFrames = 0;
+const REQUIRED_CONFIRMATION_FRAMES = 15; // Must hold for ~0.5 seconds
+
 let latestPose = null;
 let latestHands = null;
+
+// Exponential Moving Average (EMA) coefficients for jitter reduction
+const SMOOTHING_FACTOR = 0.6;
+let smoothedPoseLandmarks = null;
 
 function resizeCanvas() {
     canvasElement.width = window.innerWidth;
@@ -43,21 +50,16 @@ function calculateAngle(a, b, c) {
     return angle;
 }
 
-// Strict Thumbs-Up Logic using MediaPipe Hands (21 precise keypoints)
-// Index(8), Middle(12), Ring(16), Pinky(20) must be curled inwards (tips higher/lower than PIP joints depending on orientation).
-// Simplest geometric check for thumbs up: Thumb tip (4) is extended far away from index knuckle (5), 
-// and fingers 8, 12, 16, 20 are folded down towards the palm base (0).
+// Strict 21-point Hand Thumbs-Up Algorithm
 function isStrictThumbsUp(landmarks) {
     const wrist = landmarks[0];
     const thumbTip = landmarks[4];
-    const indexTip = landmarks[8];
     const indexMcp = landmarks[5];
-    const pinkyTip = landmarks[20];
 
-    // 1. Thumb tip must be extended upward relative to hand base
+    // 1. Thumb tip must point upward relative to base knuckles
     const thumbExtended = thumbTip.y < indexMcp.y;
 
-    // 2. Other fingers must be folded (tips closer to wrist than their intermediate knuckles)
+    // 2. All 4 fingers must be tightly curled into a fist configuration
     const indexFolded = landmarks[8].y > landmarks[6].y;
     const middleFolded = landmarks[12].y > landmarks[10].y;
     const ringFolded = landmarks[16].y > landmarks[14].y;
@@ -66,7 +68,24 @@ function isStrictThumbsUp(landmarks) {
     return thumbExtended && indexFolded && middleFolded && ringFolded && pinkyFolded;
 }
 
-// Draw skeletons and process logic per frame
+// Smooth coordinates across frames to eliminate jitter
+function smoothLandmarks(newLandmarks) {
+    if (!smoothedPoseLandmarks) {
+        // Deep copy initialization
+        smoothedPoseLandmarks = JSON.parse(JSON.stringify(newLandmarks));
+        return smoothedPoseLandmarks;
+    }
+
+    for (let i = 0; i < newLandmarks.length; i++) {
+        smoothedPoseLandmarks[i].x = SMOOTHING_FACTOR * newLandmarks[i].x + (1 - SMOOTHING_FACTOR) * smoothedPoseLandmarks[i].x;
+        smoothedPoseLandmarks[i].y = SMOOTHING_FACTOR * newLandmarks[i].y + (1 - SMOOTHING_FACTOR) * smoothedPoseLandmarks[i].y;
+        smoothedPoseLandmarks[i].z = SMOOTHING_FACTOR * newLandmarks[i].z + (1 - SMOOTHING_FACTOR) * smoothedPoseLandmarks[i].z;
+        smoothedPoseLandmarks[i].visibility = newLandmarks[i].visibility;
+    }
+    return smoothedPoseLandmarks;
+}
+
+// Render Engine & Logic Pipeline
 function processFrame() {
     canvasCtx.save();
     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
@@ -75,38 +94,50 @@ function processFrame() {
         canvasCtx.drawImage(latestPose.image, 0, 0, canvasElement.width, canvasElement.height);
     }
 
-    // 1. Hand Tracking & Unlock Check
-    if (latestHands && latestHands.multiHandLandmarks && latestHands.multiHandLandmarks.length > 0) {
-        for (const handLandmarks of latestHands.multiHandLandmarks) {
-            // Draw hand skeleton skeleton (Neon Yellow/Orange)
-            canvasCtx.strokeStyle = systemActive ? '#3fb950' : '#f39c12';
-            canvasCtx.lineWidth = 2;
-            for (let [u, v] of HAND_CONNECTIONS) {
-                const p1 = handLandmarks[u];
-                const p2 = handLandmarks[v];
-                canvasCtx.beginPath();
-                canvasCtx.moveTo(p1.x * canvasElement.width, p1.y * canvasElement.height);
-                canvasCtx.lineTo(p2.x * canvasElement.width, p2.y * canvasElement.height);
-                canvasCtx.stroke();
-            }
+    // 1. Hand Activation Gate Check
+    if (!systemActive) {
+        let detectedThumbsUpThisFrame = false;
 
-            // Check trigger condition
-            if (!systemActive) {
+        if (latestHands && latestHands.multiHandLandmarks && latestHands.multiHandLandmarks.length > 0) {
+            for (const handLandmarks of latestHands.multiHandLandmarks) {
+                // Render hand skeleton for feedback
+                canvasCtx.strokeStyle = '#f39c12';
+                canvasCtx.lineWidth = 2;
+                for (let [u, v] of HAND_CONNECTIONS) {
+                    const p1 = handLandmarks[u];
+                    const p2 = handLandmarks[v];
+                    canvasCtx.beginPath();
+                    canvasCtx.moveTo(p1.x * canvasElement.width, p1.y * canvasElement.height);
+                    canvasCtx.lineTo(p2.x * canvasElement.width, p2.y * canvasElement.height);
+                    canvasCtx.stroke();
+                }
+
                 if (isStrictThumbsUp(handLandmarks)) {
-                    systemActive = true;
-                    statusElement.innerText = "Thumbs Up Detected! Tracking Push-ups...";
+                    detectedThumbsUpThisFrame = true;
                 }
             }
         }
+
+        if (detectedThumbsUpThisFrame) {
+            thumbsUpFrames++;
+            statusElement.innerText = `Hold Thumbs Up to Unlock... (${Math.round((thumbsUpFrames / REQUIRED_CONFIRMATION_FRAMES) * 100)}%)`;
+            if (thumbsUpFrames >= REQUIRED_CONFIRMATION_FRAMES) {
+                systemActive = true;
+                statusElement.innerText = "System Unlocked • Begin Push-Ups";
+            }
+        } else {
+            thumbsUpFrames = Math.max(0, thumbsUpFrames - 1); // Decay counter smoothly if dropped
+            statusElement.innerText = "LOCKED: Hold a strict Thumbs Up to camera to start";
+        }
     }
 
-    // 2. Pose Tracking & Push-up Counting Logic
+    // 2. Pose Tracking & Rep Calculation
     if (latestPose && latestPose.poseLandmarks) {
-        const landmarks = latestPose.poseLandmarks;
+        const landmarks = smoothLandmarks(latestPose.poseLandmarks);
 
-        // Draw body skeleton
-        canvasCtx.strokeStyle = systemActive ? '#00f2fe' : 'rgba(255,255,255,0.2)';
-        canvasCtx.lineWidth = 4;
+        // Render skeleton skeleton
+        canvasCtx.strokeStyle = systemActive ? '#00f2fe' : 'rgba(243, 156, 18, 0.4)';
+        canvasCtx.lineWidth = systemActive ? 6 : 3;
         canvasCtx.lineCap = 'round';
 
         for (let [u, v] of POSE_CONNECTIONS) {
@@ -120,17 +151,17 @@ function processFrame() {
             }
         }
 
-        // Draw joints
+        // Render joints
         for (let lm of landmarks) {
             if (lm && lm.visibility > 0.5) {
                 canvasCtx.fillStyle = systemActive ? '#ff007f' : 'rgba(255,255,255,0.4)';
                 canvasCtx.beginPath();
-                canvasCtx.arc(lm.x * canvasElement.width, lm.y * canvasElement.height, 5, 0, 2 * Math.PI);
+                canvasCtx.arc(lm.x * canvasElement.width, lm.y * canvasElement.height, systemActive ? 7 : 4, 0, 2 * Math.PI);
                 canvasCtx.fill();
             }
         }
 
-        // Push-up counting (Only runs if unlocked via thumbs up)
+        // Rep Counter State Machine
         if (systemActive) {
             const shoulder = landmarks[12];
             const elbow = landmarks[14];
@@ -139,6 +170,7 @@ function processFrame() {
             if (shoulder && elbow && wrist) {
                 let elbowAngle = calculateAngle(shoulder, elbow, wrist);
 
+                // Hysteresis thresholds for bulletproof counting accuracy
                 if (elbowAngle < 90 && pushupState === "up") {
                     pushupState = "down";
                 }
@@ -146,33 +178,49 @@ function processFrame() {
                     pushupState = "up";
                     pushupCount++;
                     counterElement.innerText = pushupCount;
+                    
+                    // Subtle UI bounce animation on rep completion
+                    document.querySelector('.counter-overlay').style.transform = "scale(1.15)";
+                    setTimeout(() => {
+                        document.querySelector('.counter-overlay').style.transform = "scale(1)";
+                    }, 100);
                 }
             }
         }
     }
 
-    if (!systemActive && (!latestHands || !latestHands.multiHandLandmarks || latestHands.multiHandLandmarks.length === 0)) {
-        statusElement.innerText = "Locked: Hold a clear Thumbs-Up to camera to unlock counter";
-    }
-
     canvasCtx.restore();
 }
 
-// Initialize MediaPipe Pose
+// MediaPipe Model Configurations
 const pose = new Pose({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
 });
-pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
-pose.onResults(results => { latestPose = results; processFrame(); });
+pose.setOptions({ 
+    modelComplexity: 1, 
+    smoothLandmarks: true, 
+    minDetectionConfidence: 0.7, 
+    minTrackingConfidence: 0.7 
+});
+pose.onResults(results => { 
+    latestPose = results; 
+    processFrame(); 
+});
 
-// Initialize MediaPipe Hands
 const hands = new Hands({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
 });
-hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
-hands.onResults(results => { latestHands = results; });
+hands.setOptions({ 
+    maxNumHands: 1, 
+    modelComplexity: 1, 
+    minDetectionConfidence: 0.75, 
+    minTrackingConfidence: 0.75 
+});
+hands.onResults(results => { 
+    latestHands = results; 
+});
 
-// Camera Loop feeding both models
+// Hardware-Synced Camera Loop
 const camera = new Camera(videoElement, {
     onFrame: async () => {
         await pose.send({ image: videoElement });
@@ -184,9 +232,9 @@ const camera = new Camera(videoElement, {
 
 camera.start()
     .then(() => {
-        statusElement.innerText = "Camera live. Show a Thumbs Up to start.";
+        statusElement.innerText = "Camera Active • Hold a Thumbs Up to Unlock";
     })
     .catch(err => {
-        statusElement.innerText = "Error: Camera access failed.";
+        statusElement.innerText = "Error: Camera access denied or unavailable.";
         console.error(err);
     });
