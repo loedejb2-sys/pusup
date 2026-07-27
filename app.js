@@ -6,9 +6,9 @@ const statusElement = document.getElementById('status');
 
 let pushupCount = 0;
 let pushupState = "up"; 
-let systemActive = false; // System starts locked until triggered
+let systemActive = false; // Strictly locked until valid trigger
 
-// Core body connections
+// Core body connections for skeleton drawing
 const POSE_CONNECTIONS = [
     [11, 12], // Shoulders
     [11, 13], [13, 15], // Left arm
@@ -26,39 +26,23 @@ function calculateAngle(a, b, c) {
     return angle;
 }
 
-// Check if user is showing a thumbs up (Wrist Y vs Thumb Tip Y check)
+// Strict Thumbs-Up Logic: Right wrist (16) must be raised clearly, 
+// and the elbow (14) must be bent upwards or hand held up near head/chest level.
 function detectThumbsUp(landmarks) {
-    // Right hand wrist is landmark 16, thumb tip is landmark 20
+    const shoulder = landmarks[12];
+    const elbow = landmarks[14];
     const wrist = landmarks[16];
     const thumbTip = landmarks[20];
-    const indexTip = landmarks[8];
 
-    if (wrist && thumbTip && indexTip) {
-        // If thumb tip is significantly higher (lower Y value on canvas) than index finger / wrist
-        if (thumbTip.y < wrist.y && thumbTip.y < indexTip.y) {
+    if (shoulder && elbow && wrist && thumbTip) {
+        // Check if hand/wrist is raised above or near shoulder level (lower Y value means higher on screen)
+        const isHandRaised = wrist.y < shoulder.y;
+        
+        // Check if thumb tip is positioned higher than the wrist itself
+        const isThumbPointingUp = thumbTip.y < wrist.y;
+
+        if (isHandRaised && isThumbPointingUp) {
             return true;
-        }
-    }
-    return false;
-}
-
-// Check if user is in a proper top-of-pushup (plank) position
-function isInPushupPosition(landmarks) {
-    const shoulder = landmarks[12];
-    const hip = landmarks[24];
-    const ankle = landmarks[28]; // If visible, or use wrist/elbow check
-
-    if (shoulder && hip) {
-        // Check if torso is roughly horizontal or diagonal (plank shape)
-        // For a minimal check, ensure shoulders and hips are stable and elbows are extended
-        const wrist = landmarks[16];
-        const elbow = landmarks[14];
-        if (shoulder && elbow && wrist) {
-            let elbowAngle = calculateAngle(shoulder, elbow, wrist);
-            // Arms should be relatively straight to start (plank/up position)
-            if (elbowAngle > 150) {
-                return true;
-            }
         }
     }
     return false;
@@ -68,14 +52,14 @@ function onResults(results) {
     canvasCtx.save();
     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
     
-    // Draw mirrored webcam frame
+    // Always keep the live camera feed running on canvas
     canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
     if (results.poseLandmarks) {
         const landmarks = results.poseLandmarks;
 
-        // 1. Draw Skeleton Lines
-        canvasCtx.strokeStyle = systemActive ? '#00f2fe' : '#f39c12'; // Cyan if active, Orange if waiting
+        // 1. Draw Skeleton Lines (Orange = Waiting for trigger, Cyan = Active)
+        canvasCtx.strokeStyle = systemActive ? '#00f2fe' : '#f39c12';
         canvasCtx.lineWidth = 4;
         canvasCtx.lineCap = 'round';
 
@@ -103,23 +87,18 @@ function onResults(results) {
             }
         }
 
-        // 3. Activation & Counting Logic
+        // 3. System Lock / Unlock Gate
         if (!systemActive) {
-            // Check for activation triggers
             const isThumbsUp = detectThumbsUp(landmarks);
-            const inPosition = isInPushupPosition(landmarks);
 
             if (isThumbsUp) {
                 systemActive = true;
-                statusElement.innerText = "Status: Thumbs Up detected! Starting session...";
-            } else if (inPosition) {
-                systemActive = true;
-                statusElement.innerText = "Status: Position locked! Begin push-ups.";
+                statusElement.innerText = "Status: Thumbs Up confirmed! Session started.";
             } else {
-                statusElement.innerText = "Status: Give a Thumbs Up or get into Plank position to start.";
+                statusElement.innerText = "Status: CAMERA RUNNING. Give a clear Thumbs Up to start counting.";
             }
         } else {
-            // Active Counting Logic
+            // Active Rep Counting Logic
             const shoulder = landmarks[12];
             const elbow = landmarks[14];
             const wrist = landmarks[16];
@@ -128,6 +107,7 @@ function onResults(results) {
                 let elbowAngle = calculateAngle(shoulder, elbow, wrist);
                 statusElement.innerText = `Active | Elbow Angle: ${Math.round(elbowAngle)}°`;
 
+                // Push-up state transition machine
                 if (elbowAngle < 90 && pushupState === "up") {
                     pushupState = "down";
                 }
@@ -139,7 +119,7 @@ function onResults(results) {
             }
         }
     } else {
-        statusElement.innerText = "Status: Step back so your full upper body is visible";
+        statusElement.innerText = "Status: Camera running. Step into view.";
     }
     canvasCtx.restore();
 }
@@ -168,7 +148,7 @@ const camera = new Camera(videoElement, {
 
 camera.start()
     .then(() => {
-        statusElement.innerText = "Status: Camera active. Give a Thumbs Up to start!";
+        statusElement.innerText = "Status: Camera live. Raise a Thumbs Up to unlock counter.";
     })
     .catch(err => {
         statusElement.innerText = "Error: Camera access failed.";
